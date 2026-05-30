@@ -1,3 +1,5 @@
+package user_management;
+
 import java.util.ArrayList;
 
 public class RestaurantManager {

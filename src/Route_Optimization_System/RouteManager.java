@@ -1,3 +1,5 @@
+package Route_Optimization_System;
+
 import java.util.*;
 
 public class RouteManager {
@@ -41,7 +43,8 @@ public class RouteManager {
 		} else {
 			System.out.println("Shortest path from " + sourceId + " to " + targetId + ":");
 			StringJoiner sj = new StringJoiner(" -> ");
-			for (Node n : res.getPath()) sj.add(n.getId());
+			for (Node n : res.getPath())
+				sj.add(n.getId());
 			System.out.println(sj.toString());
 			System.out.printf("Total distance: %.2f\n", res.getDistance());
 		}

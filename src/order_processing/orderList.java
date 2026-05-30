@@ -6,7 +6,8 @@ import java.util.Queue;
 public class orderList {
     Queue<order> orderQueue = new LinkedList<>();
 
-    public orderList() {}
+    public orderList() {
+    }
 
     public void addOrder(order order) {
         orderQueue.offer(order);

@@ -1,3 +1,5 @@
+package Route_Optimization_System;
+
 import java.util.*;
 
 public class DijkstraAlgorithm {
@@ -40,7 +42,8 @@ public class DijkstraAlgorithm {
 
 		while (!pq.isEmpty()) {
 			Node u = pq.poll();
-			if (u.equals(target)) break;
+			if (u.equals(target))
+				break;
 			double du = dist.get(u);
 			for (Edge e : graph.getEdges(u)) {
 				Node v = e.getTarget();

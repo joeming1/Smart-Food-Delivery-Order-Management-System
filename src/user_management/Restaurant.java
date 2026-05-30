@@ -1,3 +1,5 @@
+package user_management;
+
 public class Restaurant {
     private String id;
     private String name;

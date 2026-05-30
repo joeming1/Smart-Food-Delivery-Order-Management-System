@@ -25,7 +25,7 @@ public class UserRestaurantMenu {
             System.out.println("6. Display All Restaurants");
             System.out.println("0. Back to Main Menu");
             System.out.print("Enter choice: ");
-            
+
             while (!scanner.hasNextInt()) {
                 System.out.print("Invalid input. Enter a number: ");
                 scanner.next();

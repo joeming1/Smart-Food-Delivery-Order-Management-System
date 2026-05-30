@@ -1,3 +1,5 @@
+package Route_Optimization_System;
+
 public class Node {
 	private final String id;
 
@@ -11,8 +13,10 @@ public class Node {
 
 	@Override
 	public boolean equals(Object o) {
-		if (this == o) return true;
-		if (!(o instanceof Node)) return false;
+		if (this == o)
+			return true;
+		if (!(o instanceof Node))
+			return false;
 		Node node = (Node) o;
 		return id.equals(node.id);
 	}

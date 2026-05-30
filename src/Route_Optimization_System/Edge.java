@@ -1,3 +1,5 @@
+package Route_Optimization_System;
+
 public class Edge {
 	private final Node target;
 	private final double weight;
