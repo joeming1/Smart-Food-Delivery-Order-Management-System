@@ -9,13 +9,11 @@ public class RestaurantManager {
         this.restaurants = new ArrayList<>();
     }
 
-    // Time Complexity: O(1)
     public void addRestaurant(Restaurant restaurant) {
         restaurants.add(restaurant);
         System.out.println("Restaurant added successfully!");
     }
 
-    // Time Complexity: O(n)
     public boolean deleteRestaurant(String id) {
         for (int i = 0; i < restaurants.size(); i++) {
             if (restaurants.get(i).getId().equalsIgnoreCase(id)) {
@@ -26,7 +24,6 @@ public class RestaurantManager {
         return false;
     }
 
-    // Time Complexity: O(n)
     public void displayAllRestaurants() {
         if (restaurants.isEmpty()) {
             System.out.println("No restaurants found.");

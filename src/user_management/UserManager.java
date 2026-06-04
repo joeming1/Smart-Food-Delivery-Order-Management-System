@@ -9,13 +9,11 @@ public class UserManager {
         this.customers = new ArrayList<>();
     }
 
-    // Time Complexity: O(1)
     public void addCustomer(Customer customer) {
         customers.add(customer);
         System.out.println("Customer added successfully!");
     }
 
-    // Time Complexity: O(n) due to searching and element shifting
     public boolean deleteCustomer(String id) {
         for (int i = 0; i < customers.size(); i++) {
             if (customers.get(i).getId().equalsIgnoreCase(id)) {
