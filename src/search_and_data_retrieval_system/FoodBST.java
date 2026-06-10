@@ -1,4 +1,4 @@
-package search_retrieval;
+package search_and_data_retrieval_system;
 
 public class FoodBST {
 

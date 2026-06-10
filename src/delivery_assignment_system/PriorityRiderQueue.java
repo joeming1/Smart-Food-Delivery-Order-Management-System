@@ -1,5 +1,9 @@
+package delivery_assignment_system;
+
 import java.util.Comparator;
+import java.util.ArrayList;
 import java.util.PriorityQueue;
+import java.util.List;
 
 public class PriorityRiderQueue {
     
@@ -46,6 +50,10 @@ public class PriorityRiderQueue {
 
     public boolean isEmpty() {
         return riderQueue.isEmpty();
+    }
+
+    public List<Rider> snapshot() {
+        return new ArrayList<>(riderQueue);
     }
 
     // Displays the queue 
