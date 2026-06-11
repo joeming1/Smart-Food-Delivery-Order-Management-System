@@ -218,7 +218,7 @@ public class SearchManager {
 
     private void printMainMenu() {
         System.out.println("\n╔══════════════════════════════════════════╗");
-        System.out.println("║   Member 5 — Search & Data Retrieval     ║");
+        System.out.println("║         Search & Data Retrieval          ║");
         System.out.println("╠══════════════════════════════════════════╣");
         System.out.println("║  1. Part A — Food Search (BST / AVL)     ║");
         System.out.println("║  2. Part B — Data Retrieval (HashMap)    ║");

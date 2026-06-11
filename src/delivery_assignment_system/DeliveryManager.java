@@ -182,7 +182,7 @@ public class DeliveryManager {
 
     private void printMenu() {
         System.out.println("\n╔══════════════════════════════════════════╗");
-        System.out.println("║  Member 3 — Delivery Assignment System   ║");
+        System.out.println("║        Delivery Assignment System        ║");
         System.out.println("╠══════════════════════════════════════════╣");
         System.out.println("║  1. Add new rider to queue               ║");
         System.out.println("║  2. Update rider location                ║");
