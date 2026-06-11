@@ -6,6 +6,8 @@ import Route_Optimization_System.Graph;
 import Route_Optimization_System.Node;
 import delivery_assignment_system.DeliveryService;
 import delivery_assignment_system.Rider;
+import java.awt.Component;
+import java.awt.Toolkit;
 import java.awt.BasicStroke;
 import java.awt.BorderLayout;
 import java.awt.Color;
@@ -25,13 +27,16 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import javax.swing.JComponent;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
+import javax.swing.DefaultListCellRenderer;
 import javax.swing.JButton;
 import javax.swing.JComboBox;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
+import javax.swing.JList;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTabbedPane;
@@ -41,11 +46,13 @@ import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 import javax.swing.table.DefaultTableModel;
+import javax.swing.table.TableColumn;
 import order_processing.order;
 import user_management.Customer;
 import user_management.Restaurant;
 import user_management.RestaurantManager;
 import user_management.UserManager;
+import search_and_data_retrieval_system.*;
 
 public class OnePageDashboard extends JFrame {
 
@@ -59,12 +66,20 @@ public class OnePageDashboard extends JFrame {
     private final List<order> orders = new ArrayList<>();
     private final List<DeliveryTrack> activeTracks = new ArrayList<>();
 
+    // Search & Data Retrieval System
+    private final FoodBST foodBST = new FoodBST();
+    private final FoodAVLTree foodAVLTree = new FoodAVLTree();
+    private final DataStorage dataStorage = new DataStorage();
+
     private final DefaultTableModel usersModel = tableModel("ID", "Name", "Phone", "Location");
     private final DefaultTableModel restaurantsModel = tableModel("ID", "Name", "Cuisine", "Location");
-    private final DefaultTableModel ridersModel = tableModel("ID", "Name", "Distance", "Location", "State");
+    private final DefaultTableModel ridersModel = tableModel("ID", "Name", "To Rest (min)", "At", "State");
+    private final List<JTable> dataTables = new ArrayList<>();
     private final DefaultTableModel ordersModel = tableModel("Order ID", "Customer", "Restaurant", "Content", "Status", "Rider", "Route");
     private final DefaultTableModel locationsModel = tableModel("Location ID", "Type");
     private final DefaultTableModel routesModel = tableModel("From", "To", "Weight");
+    private final DefaultTableModel menuModel = tableModel("Name", "Category", "Price", "Restaurant");
+    private final DefaultTableModel searchLogsModel = tableModel("Operation", "Target", "Structure", "Time (ns)", "Result");
 
     private final JComboBox<String> userSelect = new JComboBox<>();
     private final JComboBox<String> restaurantSelect = new JComboBox<>();
@@ -76,6 +91,7 @@ public class OnePageDashboard extends JFrame {
     private final JComboBox<String> dispatchSourceSelect = new JComboBox<>();
     private final JComboBox<String> dispatchTargetSelect = new JComboBox<>();
     private final JComboBox<String> dispatchOrderSelect = new JComboBox<>();
+    private final JComboBox<String> pendingOrderSelect = new JComboBox<>();
 
     private final JTextField userIdField = new JTextField(10);
     private final JTextField userNameField = new JTextField(10);
@@ -89,13 +105,22 @@ public class OnePageDashboard extends JFrame {
 
     private final JTextField riderIdField = new JTextField(10);
     private final JTextField riderNameField = new JTextField(10);
-    private final JTextField riderDistanceField = new JTextField(10);
-    private final JTextField riderTimeField = new JTextField(10);
+    private final JComboBox<String> riderLocationSelect = new JComboBox<>();
 
     private final JTextField orderContentField = new JTextField(14);
     private final JTextField routeWeightField = new JTextField(10);
     private final JTextField locationIdField = new JTextField(10);
     private final JComboBox<String> locationTypeSelect = new JComboBox<>(new String[]{"Customer", "Restaurant", "Hub", "Other"});
+
+    private final JTextField foodSearchField = new JTextField(10);
+    private final JTextField foodNameField = new JTextField(10);
+    private final JTextField foodCategoryField = new JTextField(10);
+    private final JTextField foodPriceField = new JTextField(10);
+    private final JComboBox<String> foodRestaurantSelect = new JComboBox<>();
+
+    private final JTextField lookupIdField = new JTextField(10);
+    private final JComboBox<String> lookupTypeSelect = new JComboBox<>(new String[]{"Customer ID", "Order ID"});
+    private final javax.swing.JTextArea restaurantMenuHintArea = new javax.swing.JTextArea(5, 20);
 
     private final JTextField dispatchMinutesField = new JTextField(10);
     private final JLabel statusLabel = new JLabel("Ready.");
@@ -111,7 +136,9 @@ public class OnePageDashboard extends JFrame {
         dispatchSourceSelect.setEnabled(false);
         dispatchTargetSelect.setEnabled(false);
         seedDemoData();
+        deliveryService.setRouteGraph(routeGraph);
         buildUi();
+        configureInputControls();
         refreshAllViews();
 
         animationTimer = new Timer(100, e -> {
@@ -122,7 +149,12 @@ public class OnePageDashboard extends JFrame {
         animationTimer.start();
 
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        setMinimumSize(new Dimension(1800, 1200));
+         // Dynamically set the size to fit the screen
+         Dimension screenSize = Toolkit.getDefaultToolkit().getScreenSize();
+         setSize(screenSize.width, screenSize.height);
+ 
+         // Alternatively, maximize the frame
+         // setExtendedState(JFrame.MAXIMIZED_BOTH);
         setLocationRelativeTo(null);
     }
 
@@ -154,15 +186,15 @@ public class OnePageDashboard extends JFrame {
         north.add(statusPanel, BorderLayout.SOUTH);
         add(north, BorderLayout.NORTH);
 
-        // Right-aligned Tabbed Action Panel
         JTabbedPane actionTabs = new JTabbedPane();
-        actionTabs.setPreferredSize(new Dimension(420, 720));
+        actionTabs.setPreferredSize(new Dimension(380, 500));
         actionTabs.addTab("Dispatch", scrollablePanel(buildDispatchTab()));
         actionTabs.addTab("Customer", scrollablePanel(buildUserTab()));
         actionTabs.addTab("Restaurant", scrollablePanel(buildRestaurantTab()));
         actionTabs.addTab("Rider", scrollablePanel(buildRiderTab()));
         actionTabs.addTab("Order", scrollablePanel(buildOrderTab()));
         actionTabs.addTab("Routes & Loc", scrollablePanel(buildRouteTab()));
+        actionTabs.addTab("Menu & Search", scrollablePanel(buildMenuSearchTab()));
 
         dispatchOrderSelect.addActionListener(e -> {
             String selected = (String) dispatchOrderSelect.getSelectedItem();
@@ -174,51 +206,56 @@ public class OnePageDashboard extends JFrame {
                 String custLoc = o.getTargetLocation();
                 if (restLoc != null) dispatchSourceSelect.setSelectedItem(restLoc);
                 if (custLoc != null) dispatchTargetSelect.setSelectedItem(custLoc);
+                if (restLoc != null && !restLoc.equals("UNKNOWN")) {
+                    deliveryService.updateRiderPrioritiesForRestaurant(restLoc);
+                    refreshRiders();
+                }
             }
         });
+
+        restaurantSelect.addActionListener(e -> updateRestaurantMenuHint());
 
         JPanel centerPanel = new JPanel(new BorderLayout(8, 8));
         centerPanel.setBorder(BorderFactory.createEmptyBorder(10, 0, 10, 10));
         centerPanel.add(mapPanel, BorderLayout.CENTER);
         centerPanel.add(legendPanel(), BorderLayout.SOUTH);
 
-        JPanel tablesGrid = new JPanel(new GridLayout(2, 3, 8, 8));
-        tablesGrid.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
-        tablesGrid.add(tableCard("Users", usersModel));
+        JPanel tablesGrid = new JPanel(new GridLayout(2, 4, 8, 8));
+        tablesGrid.setBorder(BorderFactory.createEmptyBorder(4, 10, 10, 10));
+        tablesGrid.add(tableCard("Customers", usersModel));
         tablesGrid.add(tableCard("Restaurants", restaurantsModel));
         tablesGrid.add(tableCard("Riders", ridersModel));
         tablesGrid.add(tableCard("Orders", ordersModel));
         tablesGrid.add(tableCard("Locations", locationsModel));
         tablesGrid.add(tableCard("Routes", routesModel));
-        tablesGrid.setPreferredSize(new Dimension(1400, 240));
+        tablesGrid.add(tableCard("Food Menu (A-Z)", menuModel));
+        tablesGrid.add(tableCard("Search & Retrieval Logs", searchLogsModel));
+
+        JPanel southPanel = new JPanel(new BorderLayout());
+        southPanel.add(tablesGrid, BorderLayout.CENTER);
+        southPanel.setPreferredSize(new Dimension(0, 260));
+        southPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 280));
 
         JPanel middle = new JPanel(new BorderLayout(10, 10));
         middle.add(centerPanel, BorderLayout.CENTER);
         middle.add(actionTabs, BorderLayout.EAST);
 
         add(middle, BorderLayout.CENTER);
-        add(tablesGrid, BorderLayout.SOUTH);
+        add(southPanel, BorderLayout.SOUTH);
 
         mapPanel.setBorder(BorderFactory.createTitledBorder("Live Route Map"));
     }
 
     private JPanel buildDispatchTab() {
-        return section("Dispatch Control Center",
-            section("Dispatch Order",
-                formRow("Select Order", dispatchOrderSelect),
-                formRow("Source (Rest)", dispatchSourceSelect),
-                formRow("Target (Cust)", dispatchTargetSelect),
-                formRow("Travel Time (m)", dispatchMinutesField),
-                Box.createVerticalStrut(6),
-                buttonRow(button("Dispatch Selected Order", e -> dispatchSelectedOrder()))
-            ),
+        return section("Dispatch",
+            formRow("Order", dispatchOrderSelect),
+            formRow("Restaurant", dispatchSourceSelect),
+            formRow("Customer", dispatchTargetSelect),
+            formRow("Mins (optional)", dispatchMinutesField),
+            buttonRow(button("Dispatch Order", e -> dispatchSelectedOrder())),
             Box.createVerticalStrut(10),
-            section("Complete Active Delivery",
-                formRow("Active Rider", riderSelect),
-                Box.createVerticalStrut(6),
-                buttonRow(button("Complete Selected Delivery", e -> completeSelectedDelivery()))
-            ),
-            Box.createVerticalStrut(30)
+            formRow("Active Rider", riderSelect),
+            buttonRow(button("Complete Delivery", e -> completeSelectedDelivery()))
         );
     }
 
@@ -250,8 +287,7 @@ public class OnePageDashboard extends JFrame {
         return section("Add New Rider",
             formRow("Rider ID", riderIdField),
             formRow("Name", riderNameField),
-            formRow("Distance (km)", riderDistanceField),
-            formRow("Time (mins)", riderTimeField),
+            formRow("Current Location", riderLocationSelect),
             Box.createVerticalStrut(12),
             buttonRow(button("Add Rider", e -> addRiderFromFields())),
             Box.createVerticalStrut(30)
@@ -259,13 +295,31 @@ public class OnePageDashboard extends JFrame {
     }
 
     private JPanel buildOrderTab() {
-        return section("Place New Order",
-            formRow("Customer", userSelect),
-            formRow("Restaurant", restaurantSelect),
-            formRow("Content", orderContentField),
-            Box.createVerticalStrut(12),
-            buttonRow(button("Add Order", e -> addOrderFromFields())),
-            Box.createVerticalStrut(30)
+        restaurantMenuHintArea.setEditable(false);
+        restaurantMenuHintArea.setLineWrap(true);
+        restaurantMenuHintArea.setWrapStyleWord(true);
+        restaurantMenuHintArea.setBackground(new Color(245, 246, 249));
+        restaurantMenuHintArea.setFont(new Font("SansSerif", Font.PLAIN, 12));
+        JScrollPane menuScroll = new JScrollPane(restaurantMenuHintArea);
+        menuScroll.setPreferredSize(new Dimension(300, 100));
+        menuScroll.setBorder(BorderFactory.createTitledBorder("Restaurant Menu"));
+ 
+        return section("Order Management",
+            section("Place New Order",
+                formRow("Customer", userSelect),
+                formRow("Restaurant", restaurantSelect),
+                formRow("Content", orderContentField),
+                Box.createVerticalStrut(6),
+                menuScroll,
+                Box.createVerticalStrut(12),
+                buttonRow(button("Add Order", e -> addOrderFromFields()))
+            ),
+            Box.createVerticalStrut(10),
+            section("Confirm Pending Order",
+                formRow("Pending Order", pendingOrderSelect),
+                Box.createVerticalStrut(6),
+                buttonRow(button("Confirm Order", e -> confirmSelectedOrder()))
+            )
         );
     }
 
@@ -292,9 +346,13 @@ public class OnePageDashboard extends JFrame {
     private JPanel buttonRow(java.awt.Component... components) {
         JPanel p = new JPanel(new FlowLayout(FlowLayout.CENTER, 8, 0));
         p.setOpaque(false);
+        p.setAlignmentX(Component.LEFT_ALIGNMENT);
+        p.setMaximumSize(new Dimension(SIDEBAR_CONTENT_WIDTH, 44));
         for (java.awt.Component c : components) p.add(c);
         return p;
     }
+
+    private static final int SIDEBAR_CONTENT_WIDTH = 320;
 
     private JPanel legendPanel() {
         JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 12, 6));
@@ -307,10 +365,12 @@ public class OnePageDashboard extends JFrame {
     private JPanel section(String title, java.awt.Component... components) {
         JPanel panel = new JPanel();
         panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
+        panel.setAlignmentX(Component.LEFT_ALIGNMENT);
         panel.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createTitledBorder(title),
                 BorderFactory.createEmptyBorder(6, 6, 6, 6)));
         for (java.awt.Component component : components) {
+            alignLeft(component);
             panel.add(component);
             panel.add(Box.createVerticalStrut(6));
         }
@@ -318,21 +378,112 @@ public class OnePageDashboard extends JFrame {
     }
 
     private JPanel formRow(String label, java.awt.Component component) {
-        JPanel row = new JPanel(new BorderLayout(8, 0));
-        JLabel text = new JLabel(label + ":");
-        text.setPreferredSize(new Dimension(95, 24));
-        row.add(text, BorderLayout.WEST);
-        row.add(component, BorderLayout.CENTER);
+        JPanel row = new JPanel(new BorderLayout(0, 4));
+        row.setAlignmentX(Component.LEFT_ALIGNMENT);
+        row.setMaximumSize(new Dimension(SIDEBAR_CONTENT_WIDTH, 80));
+        JLabel text = new JLabel(label);
+        row.add(text, BorderLayout.NORTH);
+        JPanel fieldPanel = new JPanel(new BorderLayout());
+        fieldPanel.add(component, BorderLayout.CENTER);
+        if (component instanceof JComboBox<?> combo) {
+            combo.setMaximumRowCount(12);
+            combo.setMaximumSize(new Dimension(SIDEBAR_CONTENT_WIDTH, combo.getPreferredSize().height));
+        } else if (component instanceof JTextField field) {
+            field.setMaximumSize(new Dimension(SIDEBAR_CONTENT_WIDTH, field.getPreferredSize().height));
+        }
+        row.add(fieldPanel, BorderLayout.CENTER);
         return row;
+    }
+
+    private void configureInputControls() {
+        setComboPrototype(dispatchOrderSelect, "Order #99 | Name | A -> G");
+        setComboPrototype(pendingOrderSelect, "Order #99 | Name | A -> G");
+        setComboPrototype(userSelect, "C999 | Customer Name");
+        setComboPrototype(restaurantSelect, "R999 | Restaurant Name");
+        setComboPrototype(riderSelect, "R99 | Rider Name");
+        setComboPrototype(dispatchSourceSelect, "A_Restaurant");
+        setComboPrototype(dispatchTargetSelect, "G_Customer");
+        setComboPrototype(userLocationSelect, "A_Restaurant");
+        setComboPrototype(restaurantLocationSelect, "A_Restaurant");
+        setComboPrototype(riderLocationSelect, "A_Restaurant");
+        setComboPrototype(routeFromSelect, "A_Restaurant");
+        setComboPrototype(routeToSelect, "G_Customer");
+        setComboPrototype(foodRestaurantSelect, "R999 | Restaurant Name");
+        configureTruncatedCombo(dispatchOrderSelect);
+        configureTruncatedCombo(pendingOrderSelect);
+        configureTruncatedCombo(dispatchSourceSelect);
+        configureTruncatedCombo(dispatchTargetSelect);
+        configureTruncatedCombo(foodRestaurantSelect);
+        dispatchMinutesField.setToolTipText("Leave blank to auto-calculate from route optimization.");
+    }
+
+    private void setComboPrototype(JComboBox<String> combo, String sample) {
+        combo.setPrototypeDisplayValue(sample);
+    }
+
+    private void configureTruncatedCombo(JComboBox<String> combo) {
+        combo.setRenderer(new DefaultListCellRenderer() {
+            @Override
+            public Component getListCellRendererComponent(JList<?> list, Object value, int index,
+                    boolean isSelected, boolean cellHasFocus) {
+                JLabel label = (JLabel) super.getListCellRendererComponent(
+                        list, value, index, isSelected, cellHasFocus);
+                if (value != null) {
+                    String text = value.toString();
+                    label.setToolTipText(text);
+                    if (index < 0 && text.length() > 30) {
+                        label.setText(text.substring(0, 27) + "...");
+                    }
+                }
+                return label;
+            }
+        });
     }
 
     private JScrollPane tableCard(String title, DefaultTableModel model) {
         JTable table = new JTable(model);
         table.setRowHeight(24);
         table.setFillsViewportHeight(true);
+        table.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
+        table.getTableHeader().setReorderingAllowed(false);
+        dataTables.add(table);
         JScrollPane scroll = new JScrollPane(table);
+        scroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED);
+        scroll.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
+        scroll.setPreferredSize(new Dimension(220, 110));
         scroll.setBorder(BorderFactory.createTitledBorder(title));
         return scroll;
+    }
+
+    private void resizeAllTables() {
+        for (JTable table : dataTables) {
+            resizeTableColumns(table);
+        }
+    }
+
+    private void resizeTableColumns(JTable table) {
+        final int margin = 12;
+        final int maxColWidth = 160;
+        for (int col = 0; col < table.getColumnCount(); col++) {
+            TableColumn column = table.getColumnModel().getColumn(col);
+            int maxWidth = 0;
+
+            Component header = table.getTableHeader().getDefaultRenderer()
+                    .getTableCellRendererComponent(table, column.getHeaderValue(), false, false, 0, col);
+            maxWidth = Math.max(maxWidth, header.getPreferredSize().width);
+
+            int rows = table.getRowCount();
+            for (int row = 0; row < rows; row++) {
+                Object value = table.getValueAt(row, col);
+                if (value == null) continue;
+                Component cell = table.getCellRenderer(row, col)
+                        .getTableCellRendererComponent(table, value, false, false, row, col);
+                maxWidth = Math.max(maxWidth, cell.getPreferredSize().width);
+            }
+
+            int width = Math.min(maxWidth + margin, maxColWidth);
+            column.setPreferredWidth(width);
+        }
     }
 
     private JButton button(String text, java.awt.event.ActionListener listener) {
@@ -342,21 +493,62 @@ public class OnePageDashboard extends JFrame {
     }
 
     private JScrollPane scrollablePanel(JPanel panel) {
+        constrainPanelWidth(panel, SIDEBAR_CONTENT_WIDTH);
         JScrollPane scroll = new JScrollPane(panel);
         scroll.setBorder(null);
         scroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
-        scroll.getVerticalScrollBar().setUnitIncrement(12);
+        scroll.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
+        scroll.getVerticalScrollBar().setUnitIncrement(16);
         return scroll;
     }
 
-    private void seedDemoData() {
-        userManager.addCustomer(new Customer("C001", "Ali Ahmad", "0123456789", "E_Customer"));
-        userManager.addCustomer(new Customer("C002", "Sarah Kaur", "0187654321", "F_Customer"));
-        userManager.addCustomer(new Customer("C003", "Bobby Lim", "0112233445", "G_Customer"));
+    private void alignLeft(Component component) {
+        if (component instanceof JComponent jc) {
+            jc.setAlignmentX(Component.LEFT_ALIGNMENT);
+        }
+    }
 
-        restaurantManager.addRestaurant(new Restaurant("R001", "Warung Mak Jah", "Rice", "A_Restaurant"));
-        restaurantManager.addRestaurant(new Restaurant("R002", "Penang Corner", "Noodle", "B_Restaurant"));
-        restaurantManager.addRestaurant(new Restaurant("R003", "Mamak Selera", "Local", "C_Restaurant"));
+    private void constrainPanelWidth(JPanel panel, int width) {
+        Dimension max = new Dimension(width, Integer.MAX_VALUE);
+        panel.setMaximumSize(max);
+        alignLeft(panel);
+        for (Component child : panel.getComponents()) {
+            alignLeft(child);
+            if (child instanceof JPanel childPanel) {
+                childPanel.setMaximumSize(max);
+            }
+        }
+    }
+
+    private void seedDemoData() {
+        Customer c1 = new Customer("C001", "Ali Ahmad", "0123456789", "E_Customer");
+        Customer c2 = new Customer("C002", "Sarah Kaur", "0187654321", "F_Customer");
+        Customer c3 = new Customer("C003", "Bobby Lim", "0112233445", "G_Customer");
+        
+        userManager.addCustomer(c1);
+        userManager.addCustomer(c2);
+        userManager.addCustomer(c3);
+        
+        dataStorage.saveCustomer(c1);
+        dataStorage.saveCustomer(c2);
+        dataStorage.saveCustomer(c3);
+
+        restaurantManager.addRestaurant(new Restaurant("R001", "A_Restaurant", "Rice", "A_Restaurant"));
+        restaurantManager.addRestaurant(new Restaurant("R002", "B_Restaurant", "Noodle", "B_Restaurant"));
+        restaurantManager.addRestaurant(new Restaurant("R003", "C_Restaurant", "Local", "C_Restaurant"));
+
+        FoodItem[] foods = {
+                new FoodItem("Nasi Lemak", "Rice", 8.50, "A_Restaurant"),
+                new FoodItem("Char Kuey Teow", "Noodle", 9.00, "B_Restaurant"),
+                new FoodItem("Roti Canai", "Bread", 2.00, "C_Restaurant"),
+                new FoodItem("Mee Goreng", "Noodle", 7.50, "C_Restaurant"),
+                new FoodItem("Laksa", "Soup", 10.00, "B_Restaurant"),
+                new FoodItem("Teh Tarik", "Drink", 2.50, "C_Restaurant"),
+        };
+        for (FoodItem f : foods) {
+            foodBST.insert(f);
+            foodAVLTree.insert(f);
+        }
 
         addLocationInternal("A_Restaurant", "Restaurant");
         addLocationInternal("B_Restaurant", "Restaurant");
@@ -375,23 +567,26 @@ public class OnePageDashboard extends JFrame {
         addRouteInternal("A_Restaurant", "E_Customer", 7);
         addRouteInternal("B_Restaurant", "F_Customer", 6);
 
-        order first = new order("Ali Ahmad", "Warung Mak Jah", "Nasi Lemak x2");
+        order first = new order("E_Customer", "A_Restaurant", "Nasi Lemak x2");
         first.setSourceLocation("A_Restaurant");
         first.setTargetLocation("E_Customer");
         first.setStatus("CONFIRMED");
         orders.add(first);
+        dataStorage.saveOrder(first);
 
-        order second = new order("Sarah Kaur", "Penang Corner", "Char Kuey Teow x1");
+        order second = new order("F_Customer", "B_Restaurant", "Char Kuey Teow x1");
         second.setSourceLocation("B_Restaurant");
         second.setTargetLocation("F_Customer");
         second.setStatus("PENDING");
         orders.add(second);
+        dataStorage.saveOrder(second);
 
-        order third = new order("Bobby Lim", "Mamak Selera", "Roti Canai x3, Teh Tarik x2");
+        order third = new order("G_Customer", "C_Restaurant", "Roti Canai x3, Teh Tarik x2");
         third.setSourceLocation("C_Restaurant");
         third.setTargetLocation("G_Customer");
         third.setStatus("CONFIRMED");
         orders.add(third);
+        dataStorage.saveOrder(third);
     }
 
     private void addUserFromFields() {
@@ -403,7 +598,9 @@ public class OnePageDashboard extends JFrame {
             setStatus("Please enter Customer ID and Name.");
             return;
         }
-        userManager.addCustomer(new Customer(id, name, phone, location.isEmpty() ? "UNKNOWN" : location));
+        Customer customer = new Customer(id, name, phone, location.isEmpty() ? "UNKNOWN" : location);
+        userManager.addCustomer(customer);
+        dataStorage.saveCustomer(customer);
         if (!location.isEmpty()) {
             addLocationInternal(location, "Customer");
         }
@@ -441,13 +638,14 @@ public class OnePageDashboard extends JFrame {
             setStatus("Please enter Rider ID and Name.");
             return;
         }
-        double distance = parseDouble(riderDistanceField.getText().trim(), 0.0);
-        int time = parseInt(riderTimeField.getText().trim(), 5);
-        deliveryService.addRider(new Rider(id, name, distance, time));
+        String location = selectedValue(riderLocationSelect);
+        if (location.isEmpty()) {
+            setStatus("Please select the rider's current location.");
+            return;
+        }
+        deliveryService.addRider(new Rider(id, name, 0, 0, location));
         riderIdField.setText("");
         riderNameField.setText("");
-        riderDistanceField.setText("");
-        riderTimeField.setText("");
         refreshAllViews();
         setStatus("Rider added.");
     }
@@ -470,9 +668,22 @@ public class OnePageDashboard extends JFrame {
         newOrder.setTargetLocation(custLoc != null ? custLoc : "UNKNOWN");
         
         orders.add(newOrder);
+        dataStorage.saveOrder(newOrder);
         orderContentField.setText("");
         refreshAllViews();
         setStatus("Order added.");
+    }
+
+    private void confirmSelectedOrder() {
+        String selected = selectedValue(pendingOrderSelect);
+        if (selected.isEmpty()) return;
+        int orderId = parseOrderId(selected);
+        order o = findOrder(orderId);
+        if (o != null) {
+            o.setStatus("CONFIRMED");
+            refreshAllViews();
+            setStatus("Order #" + orderId + " has been CONFIRMED.");
+        }
     }
 
     private void addLocationFromFields() {
@@ -516,9 +727,9 @@ public class OnePageDashboard extends JFrame {
             return;
         }
 
-        Rider rider = deliveryService.assignBestRider();
+        Rider rider = deliveryService.assignBestRiderForRestaurant(source);
         if (rider == null) {
-            setStatus("No riders available.");
+            setStatus("No riders available or no route to restaurant.");
             return;
         }
 
@@ -559,12 +770,12 @@ public class OnePageDashboard extends JFrame {
         targetOrder.setStatus("DISPATCHED");
         targetOrder.assignRider(rider.getRiderId(), source, target, travelMinutes);
         activeTracks.add(new DeliveryTrack(rider, path, source, target, travelMinutes, System.currentTimeMillis()));
-        orders.remove(targetOrder);
+        // orders.remove(targetOrder); // Retain order to display status transitions
         
         mapPanel.setHighlightedPath(path);
         refreshAllViews();
-        setStatus("Dispatched " + rider.getName() + " for order #" + targetOrder.getOrderID() + " using " + travelMinutes + " minutes.");
-        riderHintLabel.setText(rider.getName() + " is travelling from " + riderStart + " -> " + source + " -> " + target + " (~" + travelMinutes + " min).");
+        setStatus("Dispatched " + rider.getName() + " (nearest to " + source + ", " + (int) pickupTime + " min pickup) for order #" + targetOrder.getOrderID() + ".");
+        riderHintLabel.setText(rider.getName() + " is travelling from " + riderStart + " -> " + source + " -> " + target + " (~" + travelMinutes + " min total).");
     }
 
     private void completeSelectedDelivery() {
@@ -602,10 +813,12 @@ public class OnePageDashboard extends JFrame {
         refreshOrders();
         refreshLocations();
         refreshRoutes();
+        refreshMenuTable();
         refreshSelections();
         mapPanel.setGraph(routeGraph, locationTypes);
         mapPanel.setActiveTracks(activeTracks);
         mapPanel.repaint();
+        resizeAllTables();
     }
 
     private void refreshUsers() {
@@ -628,12 +841,21 @@ public class OnePageDashboard extends JFrame {
         for (Rider rider : deliveryService.getBusyRiders()) {
             busy.add(rider.getRiderId());
         }
+        String restaurantId = selectedDispatchRestaurant();
+        if (restaurantId != null) {
+            deliveryService.updateRiderPrioritiesForRestaurant(restaurantId);
+        }
         for (Rider rider : deliveryService.getAllRiders()) {
+            String travelDisplay = busy.contains(rider.getRiderId())
+                    ? "-"
+                    : (rider.getDeliveryTimeMins() > 0
+                            ? rider.getDeliveryTimeMins() + " min"
+                            : "-");
             ridersModel.addRow(new Object[]{
-                rider.getRiderId(), 
-                rider.getName(), 
-                String.format("%.1f km", rider.getDistanceKm()), 
-                "Currently at " + rider.getCurrentLocationId(), 
+                rider.getRiderId(),
+                rider.getName(),
+                travelDisplay,
+                rider.getCurrentLocationId(),
                 busy.contains(rider.getRiderId()) ? "Busy" : "Available"
             });
         }
@@ -669,11 +891,17 @@ public class OnePageDashboard extends JFrame {
         fillCombo(riderSelect, deliveryService.getBusyRiders().stream().map(r -> r.getRiderId() + " | " + r.getName()).toList());
         fillCombo(orderSelect, orders.stream().map(o -> o.getOrderID() + " | " + o.getCustomerName() + " | " + o.getRestaurantName()).toList());
         
-        List<String> pendingOrders = orders.stream()
-                .filter(o -> "PENDING".equals(o.getStatus()) || "CONFIRMED".equals(o.getStatus()))
+        List<String> pendingOnly = orders.stream()
+                .filter(o -> "PENDING".equals(o.getStatus()))
                 .map(this::formatOrderForCombo)
                 .toList();
-        fillCombo(dispatchOrderSelect, pendingOrders);
+        fillCombo(pendingOrderSelect, pendingOnly);
+
+        List<String> confirmedOnly = orders.stream()
+                .filter(o -> "CONFIRMED".equals(o.getStatus()))
+                .map(this::formatOrderForCombo)
+                .toList();
+        fillCombo(dispatchOrderSelect, confirmedOnly);
 
         List<String> locations = new ArrayList<>(locationTypes.keySet());
         Collections.sort(locations);
@@ -684,6 +912,19 @@ public class OnePageDashboard extends JFrame {
         fillCombo(dispatchTargetSelect, locations);
         fillCombo(userLocationSelect, locations);
         fillCombo(restaurantLocationSelect, locations);
+        fillCombo(riderLocationSelect, locations);
+
+        fillCombo(foodRestaurantSelect, restaurantManager.getRestaurants().stream().map(r -> r.getId() + " | " + r.getName()).toList());
+    }
+
+    private String selectedDispatchRestaurant() {
+        String selected = selectedValue(dispatchOrderSelect);
+        if (selected.isEmpty()) return null;
+        order o = findOrder(parseOrderId(selected));
+        if (o == null) return null;
+        String source = o.getSourceLocation();
+        if (source == null || source.equals("UNKNOWN")) return null;
+        return source;
     }
 
     private void fillCombo(JComboBox<String> combo, List<String> values) {
@@ -813,7 +1054,8 @@ public class OnePageDashboard extends JFrame {
         private List<DeliveryTrack> tracks = Collections.emptyList();
 
         RouteMapPanel() {
-            setPreferredSize(new Dimension(1200, 800));
+            setPreferredSize(new Dimension(1200, 700));
+            setMinimumSize(new Dimension(300, 240));
             setBackground(Color.WHITE);
         }
 
@@ -843,21 +1085,25 @@ public class OnePageDashboard extends JFrame {
                 return;
             }
 
-            Map<String, Point2D.Double> positions = layoutNodes();
-            drawEdges(g2, positions);
+            double centerX = getWidth() * 0.5;
+            double centerY = getHeight() * 0.48;
+            Map<String, Point2D.Double> positions = layoutNodes(centerX, centerY);
+            drawEdges(g2, positions, centerX, centerY);
             drawPath(g2, positions);
-            drawNodes(g2, positions);
-            drawRiders(g2, positions);
+            drawNodes(g2, positions, centerX, centerY);
+            drawRiders(g2, positions, centerX, centerY);
             g2.dispose();
         }
 
-        private Map<String, Point2D.Double> layoutNodes() {
+        private Map<String, Point2D.Double> layoutNodes(double centerX, double centerY) {
             List<Node> nodes = new ArrayList<>(graph.getNodes());
             nodes.sort((a, b) -> a.getId().compareToIgnoreCase(b.getId()));
             Map<String, Point2D.Double> positions = new HashMap<>();
-            double radius = Math.min(getWidth(), getHeight()) * 0.42;
-            double centerX = getWidth() * 0.5;
-            double centerY = getHeight() * 0.5;
+            double labelPadding = 80;
+            double usableWidth = Math.max(160, getWidth() - labelPadding * 2);
+            double usableHeight = Math.max(160, getHeight() - labelPadding * 2);
+            double spread = Math.min(0.80, 0.40 + nodes.size() * 0.02);
+            double radius = Math.min(usableWidth, usableHeight) * spread;
             for (int i = 0; i < nodes.size(); i++) {
                 double angle = (2 * Math.PI * i / Math.max(nodes.size(), 1)) - Math.PI / 2;
                 double x = centerX + radius * Math.cos(angle);
@@ -867,21 +1113,41 @@ public class OnePageDashboard extends JFrame {
             return positions;
         }
 
-        private void drawEdges(Graphics2D g2, Map<String, Point2D.Double> positions) {
+        private void drawEdges(Graphics2D g2, Map<String, Point2D.Double> positions, double centerX, double centerY) {
             g2.setColor(new Color(190, 196, 205));
             g2.setStroke(new BasicStroke(2f));
+            Font weightFont = new Font("SansSerif", Font.PLAIN, 10);
+            Font oldFont = g2.getFont();
+            g2.setFont(weightFont);
             for (Node from : graph.getNodes()) {
                 Point2D.Double p1 = positions.get(from.getId());
                 if (p1 == null) continue;
                 for (Edge edge : graph.getEdges(from)) {
                     Point2D.Double p2 = positions.get(edge.getTarget().getId());
                     if (p2 == null) continue;
-                    g2.drawLine((int) p1.x, (int) p1.y, (int) p2.x, (int) p2.y);
-                    g2.setColor(new Color(120, 126, 135));
-                    g2.drawString(String.valueOf(edge.getWeight()), (int) ((p1.x + p2.x) / 2) + 4, (int) ((p1.y + p2.y) / 2) - 4);
+                    if (from.getId().compareTo(edge.getTarget().getId()) > 0) {
+                        continue;
+                    }
                     g2.setColor(new Color(190, 196, 205));
+                    g2.drawLine((int) p1.x, (int) p1.y, (int) p2.x, (int) p2.y);
+                    String weight = String.valueOf(edge.getWeight());
+                    double midX = (p1.x + p2.x) / 2;
+                    double midY = (p1.y + p2.y) / 2;
+                    double dx = p2.x - p1.x;
+                    double dy = p2.y - p1.y;
+                    double len = Math.hypot(dx, dy);
+                    double perpX = len == 0 ? 0 : -dy / len * 10;
+                    double perpY = len == 0 ? 0 : dx / len * 10;
+                    int textX = (int) (midX + perpX);
+                    int textY = (int) (midY + perpY);
+                    int textWidth = g2.getFontMetrics().stringWidth(weight);
+                    g2.setColor(new Color(255, 255, 255, 220));
+                    g2.fillRoundRect(textX - 2, textY - g2.getFontMetrics().getAscent(), textWidth + 4, g2.getFontMetrics().getHeight() - 2, 4, 4);
+                    g2.setColor(new Color(90, 96, 105));
+                    g2.drawString(weight, textX, textY);
                 }
             }
+            g2.setFont(oldFont);
         }
 
         private void drawPath(Graphics2D g2, Map<String, Point2D.Double> positions) {
@@ -897,7 +1163,9 @@ public class OnePageDashboard extends JFrame {
             }
         }
 
-        private void drawNodes(Graphics2D g2, Map<String, Point2D.Double> positions) {
+        private void drawNodes(Graphics2D g2, Map<String, Point2D.Double> positions, double centerX, double centerY) {
+            Font labelFont = new Font("SansSerif", Font.BOLD, 12);
+            g2.setFont(labelFont);
             for (Node node : graph.getNodes()) {
                 Point2D.Double p = positions.get(node.getId());
                 if (p == null) continue;
@@ -909,13 +1177,42 @@ public class OnePageDashboard extends JFrame {
                 g2.fillOval(x, y, diameter, diameter);
                 g2.setColor(Color.DARK_GRAY);
                 g2.drawOval(x, y, diameter, diameter);
-                g2.setFont(new Font("SansSerif", Font.BOLD, 12));
-                int textWidth = g2.getFontMetrics().stringWidth(node.getId());
-                g2.drawString(node.getId(), (int) p.x - textWidth / 2, y - 7);
+                drawNodeLabel(g2, node.getId(), p, centerX, centerY, diameter);
             }
         }
 
-        private void drawRiders(Graphics2D g2, Map<String, Point2D.Double> positions) {
+        private String formatMapLabel(String id) {
+            if (id == null || id.isBlank()) return "";
+            int split = id.indexOf('_');
+            if (split > 0) {
+                String prefix = id.substring(0, split);
+                String suffix = id.substring(split + 1);
+                if (suffix.length() > 4) {
+                    suffix = suffix.substring(0, 4);
+                }
+                return prefix + " " + suffix;
+            }
+            return id.length() > 8 ? id.substring(0, 8) : id;
+        }
+
+        private void drawNodeLabel(Graphics2D g2, String fullId, Point2D.Double p,
+                double centerX, double centerY, int diameter) {
+            String label = formatMapLabel(fullId);
+            int textWidth = g2.getFontMetrics().stringWidth(label);
+            int textHeight = g2.getFontMetrics().getHeight();
+            double angle = Math.atan2(p.y - centerY, p.x - centerX);
+            double offset = diameter / 2.0 + 20;
+            int textX = (int) (p.x + Math.cos(angle) * offset) - textWidth / 2;
+            int textY = (int) (p.y + Math.sin(angle) * offset) + textHeight / 3;
+            textX = Math.max(4, Math.min(textX, getWidth() - textWidth - 4));
+            textY = Math.max(textHeight, Math.min(textY, getHeight() - 4));
+            g2.setColor(new Color(255, 255, 255, 210));
+            g2.fillRoundRect(textX - 3, textY - textHeight + 4, textWidth + 6, textHeight, 6, 6);
+            g2.setColor(new Color(45, 52, 60));
+            g2.drawString(label, textX, textY);
+        }
+
+        private void drawRiders(Graphics2D g2, Map<String, Point2D.Double> positions, double centerX, double centerY) {
             long now = System.currentTimeMillis();
             Set<String> busyRiderIds = new HashSet<>();
             for (DeliveryTrack track : tracks) {
@@ -923,14 +1220,12 @@ public class OnePageDashboard extends JFrame {
                 Point2D.Double p = track.positionAt(now, positions);
                 if (p == null) continue;
                 g2.setColor(new Color(44, 180, 74));
-                g2.fillOval((int) p.x - 10, (int) p.y - 10, 20, 20);
+                g2.fillOval((int) p.x - 8, (int) p.y - 8, 16, 16);
                 g2.setColor(Color.BLACK);
-                String label = track.rider.getName() + " (" + Math.max(0, Math.round(track.remainingMinutes(now))) + "m left)";
-                int width = g2.getFontMetrics().stringWidth(label);
-                g2.drawString(label, (int) p.x - width / 2, (int) p.y - 16);
+                String label = track.rider.getName() + " (" + Math.max(0, Math.round(track.remainingMinutes(now))) + "m)";
+                drawRadialLabel(g2, label, p, centerX, centerY, 22);
             }
 
-            // Draw available stationary riders at their current locations
             for (Rider rider : deliveryService.getAllRiders()) {
                 if (busyRiderIds.contains(rider.getRiderId())) {
                     continue;
@@ -939,17 +1234,30 @@ public class OnePageDashboard extends JFrame {
                 Point2D.Double p = positions.get(loc);
                 if (p == null) continue;
 
+                double angle = Math.atan2(p.y - centerY, p.x - centerX);
+                int dotX = (int) (p.x + Math.cos(angle) * 1);
+                int dotY = (int) (p.y + Math.sin(angle) * 1);
                 g2.setColor(new Color(51, 102, 204));
-                g2.fillOval((int) p.x - 7, (int) p.y - 7, 14, 14);
+                g2.fillOval(dotX - 6, dotY - 6, 12, 12);
 
-                g2.setColor(new Color(51, 102, 204));
                 Font oldFont = g2.getFont();
                 g2.setFont(new Font("SansSerif", Font.BOLD, 10));
-                String label = rider.getName() + " (Idle)";
-                int width = g2.getFontMetrics().stringWidth(label);
-                g2.drawString(label, (int) p.x - width / 2, (int) p.y + 20);
+                g2.setColor(new Color(51, 102, 204));
+                drawRadialLabel(g2, rider.getName(), p, centerX, centerY, 15);
                 g2.setFont(oldFont);
             }
+        }
+
+        private void drawRadialLabel(Graphics2D g2, String label, Point2D.Double p,
+                double centerX, double centerY, double offset) {
+            int textWidth = g2.getFontMetrics().stringWidth(label);
+            int textHeight = g2.getFontMetrics().getHeight();
+            double angle = Math.atan2(p.y - centerY, p.x - centerX);
+            int textX = (int) (p.x + Math.cos(angle) * offset) - textWidth / 2;
+            int textY = (int) (p.y + Math.sin(angle) * offset) + textHeight / 3;
+            textX = Math.max(4, Math.min(textX, getWidth() - textWidth - 4));
+            textY = Math.max(textHeight, Math.min(textY, getHeight() - 4));
+            g2.drawString(label, textX, textY);
         }
 
         private Color colorFor(String type) {
@@ -1051,6 +1359,260 @@ public class OnePageDashboard extends JFrame {
             }
         }
         return null;
+    }
+
+    private JPanel buildMenuSearchTab() {
+        return section("Menu & Search Engine",
+            section("Search Food by Name (BST vs AVL)",
+                formRow("Food Name", foodSearchField),
+                buttonRow(
+                    button("Search AVL & BST", e -> searchFoodByName()),
+                    button("Clear Logs", e -> searchLogsModel.setRowCount(0))
+                )
+            ),
+            section("Profile & Order Retrieval (O(1) HashMap)",
+                formRow("ID / Key (e.g. C001, 1)", lookupIdField),
+                formRow("Type", lookupTypeSelect),
+                buttonRow(
+                    button("HashMap Lookup", e -> lookupDataHashMap())
+                ),
+                Box.createVerticalStrut(6),
+                buttonRow(
+                    button("Run 10k HashMap Speed Demo", e -> runSpeedDemo())
+                )
+            ),
+            section("Add New Food Item to Menu",
+                formRow("Food Name", foodNameField),
+                formRow("Category", foodCategoryField),
+                formRow("Price (RM)", foodPriceField),
+                formRow("Restaurant", foodRestaurantSelect),
+                buttonRow(button("Add Food Item", e -> addFoodFromFields()))
+            )
+        );
+    }
+
+    private void searchFoodByName() {
+        String name = foodSearchField.getText().trim();
+        if (name.isEmpty()) {
+            setStatus("Please enter a food name to search.");
+            return;
+        }
+
+        // Measure BST Search
+        long t1 = System.nanoTime();
+        FoodItem bstResult = foodBST.search(name);
+        long t2 = System.nanoTime();
+        long bstTime = t2 - t1;
+
+        // Measure AVL Search
+        long t3 = System.nanoTime();
+        FoodItem avlResult = foodAVLTree.search(name);
+        long t4 = System.nanoTime();
+        long avlTime = t4 - t3;
+
+        boolean found = (avlResult != null);
+        String resultStr = found ? "Found: RM" + String.format("%.2f", avlResult.getPrice()) + " at " + avlResult.getRestaurantName() : "Not Found";
+
+        // Log results to table
+        searchLogsModel.addRow(new Object[]{"BST Search", name, "Binary Search Tree", bstTime + " ns", found ? "Found" : "Not Found"});
+        searchLogsModel.addRow(new Object[]{"AVL Search", name, "AVL Tree (Balanced)", avlTime + " ns", found ? "Found" : "Not Found"});
+        
+        if (found) {
+            setStatus("Found \"" + name + "\". BST: " + bstTime + " ns | AVL: " + avlTime + " ns.");
+        } else {
+            setStatus("Food \"" + name + "\" not found. BST: " + bstTime + " ns | AVL: " + avlTime + " ns.");
+        }
+        foodSearchField.setText("");
+        resizeAllTables();
+    }
+
+    private void lookupDataHashMap() {
+        String key = lookupIdField.getText().trim();
+        String type = selectedValue(lookupTypeSelect);
+        if (key.isEmpty()) {
+            setStatus("Please enter an ID / Key to lookup.");
+            return;
+        }
+
+        if ("Customer ID".equals(type)) {
+            // O(1) HashMap lookup
+            long t1 = System.nanoTime();
+            Customer customer = dataStorage.getCustomer(key);
+            long t2 = System.nanoTime();
+            long hashTime = t2 - t1;
+
+            // O(n) Linear lookup from userManager
+            long t3 = System.nanoTime();
+            Customer linearResult = null;
+            for (Customer c : userManager.getCustomers()) {
+                if (c.getId().equalsIgnoreCase(key)) {
+                    linearResult = c;
+                    break;
+                }
+            }
+            long t4 = System.nanoTime();
+            long linearTime = t4 - t3;
+
+            boolean found = (customer != null);
+            String details = found ? customer.getName() + " (" + customer.getPhone() + ")" : "Not Found";
+            searchLogsModel.addRow(new Object[]{"Cust Lookup (O(1))", key, "HashMap", hashTime + " ns", found ? "Found" : "Not Found"});
+            searchLogsModel.addRow(new Object[]{"Cust Lookup (O(n))", key, "ArrayList (Linear)", linearTime + " ns", found ? "Found" : "Not Found"});
+            
+            if (found) {
+                setStatus("Customer found: " + details + ". HashMap: " + hashTime + " ns | Linear: " + linearTime + " ns.");
+            } else {
+                setStatus("Customer \"" + key + "\" not found. HashMap: " + hashTime + " ns | Linear: " + linearTime + " ns.");
+            }
+        } else {
+            // Order ID lookup
+            String orderKey = key;
+            if (!key.startsWith("ORD-")) {
+                orderKey = "ORD-" + key;
+            }
+
+            // O(1) HashMap lookup
+            long t1 = System.nanoTime();
+            order o = dataStorage.getOrder(orderKey);
+            long t2 = System.nanoTime();
+            long hashTime = t2 - t1;
+
+            // O(n) Linear lookup from orders
+            long t3 = System.nanoTime();
+            order linearResult = null;
+            int targetId = -1;
+            try {
+                targetId = Integer.parseInt(orderKey.replace("ORD-", ""));
+            } catch (Exception e) {}
+            for (order ord : orders) {
+                if (ord.getOrderID() == targetId) {
+                    linearResult = ord;
+                    break;
+                }
+            }
+            long t4 = System.nanoTime();
+            long linearTime = t4 - t3;
+
+            boolean found = (o != null);
+            String details = found ? o.getCustomerName() + " -> " + o.getOrderContent() + " (" + o.getStatus() + ")" : "Not Found";
+            searchLogsModel.addRow(new Object[]{"Order Lookup (O(1))", orderKey, "HashMap", hashTime + " ns", found ? "Found" : "Not Found"});
+            searchLogsModel.addRow(new Object[]{"Order Lookup (O(n))", orderKey, "ArrayList (Linear)", linearTime + " ns", found ? "Found" : "Not Found"});
+
+            if (found) {
+                setStatus("Order found: " + details + ". HashMap: " + hashTime + " ns | Linear: " + linearTime + " ns.");
+            } else {
+                setStatus("Order \"" + orderKey + "\" not found. HashMap: " + hashTime + " ns | Linear: " + linearTime + " ns.");
+            }
+        }
+        lookupIdField.setText("");
+        resizeAllTables();
+    }
+
+    private void runSpeedDemo() {
+        setStatus("Running HashMap O(1) vs Linear O(n) search speed demo...");
+        SwingUtilities.invokeLater(() -> {
+            HashMap<String, Customer> bigMap = new HashMap<>();
+            List<Customer> bigList = new ArrayList<>();
+            for (int i = 0; i < 10_000; i++) {
+                String id = "C" + String.format("%05d", i);
+                Customer c = new Customer(id, "User " + i, "010000" + i);
+                bigMap.put(id, c);
+                bigList.add(c);
+            }
+            String target = "C09999";
+
+            // HashMap O(1) Search
+            long t1 = System.nanoTime();
+            Customer hashResult = bigMap.get(target);
+            long t2 = System.nanoTime();
+            long hashTime = t2 - t1;
+
+            // Linear O(n) Search
+            long t3 = System.nanoTime();
+            Customer linearResult = null;
+            for (Customer c : bigList) {
+                if (c.getId().equals(target)) {
+                    linearResult = c;
+                    break;
+                }
+            }
+            long t4 = System.nanoTime();
+            long linearTime = t4 - t3;
+
+            searchLogsModel.addRow(new Object[]{"10k Demo (O(1))", target, "HashMap", hashTime + " ns", "Found User"});
+            searchLogsModel.addRow(new Object[]{"10k Demo (O(n))", target, "ArrayList (Linear)", linearTime + " ns", "Found User"});
+            
+            String msg = "Speed Comparison for n = 10,000 items:\n\n" +
+                         "1. HashMap get() [O(1)]:\n" +
+                         "    Time: " + hashTime + " ns\n\n" +
+                         "2. ArrayList linear search [O(n)]:\n" +
+                         "    Time: " + linearTime + " ns\n\n" +
+                         "HashMap is approximately " + (linearTime / Math.max(1, hashTime)) + "x faster!\n" +
+                         "As n grows, HashMap search time remains flat O(1), while linear search grows O(n).";
+            
+            javax.swing.JOptionPane.showMessageDialog(this, msg, "HashMap vs Linear Search Demo", javax.swing.JOptionPane.INFORMATION_MESSAGE);
+            setStatus("Speed demo finished. HashMap: " + hashTime + " ns | Linear: " + linearTime + " ns.");
+            resizeAllTables();
+        });
+    }
+
+    private void addFoodFromFields() {
+        String name = foodNameField.getText().trim();
+        String category = foodCategoryField.getText().trim();
+        String priceText = foodPriceField.getText().trim();
+        String restSelected = selectedValue(foodRestaurantSelect);
+
+        if (name.isEmpty() || category.isEmpty() || priceText.isEmpty() || restSelected.isEmpty()) {
+            setStatus("Please fill in all food details.");
+            return;
+        }
+
+        double price = parseDouble(priceText, -1.0);
+        if (price < 0) {
+            setStatus("Please enter a valid price.");
+            return;
+        }
+
+        String restName = stripLeadingId(restSelected);
+        FoodItem food = new FoodItem(name, category, price, restName);
+        foodBST.insert(food);
+        foodAVLTree.insert(food);
+
+        foodNameField.setText("");
+        foodCategoryField.setText("");
+        foodPriceField.setText("");
+        
+        refreshAllViews();
+        updateRestaurantMenuHint(); // update hint display if it was showing this restaurant
+        setStatus("Food item \"" + name + "\" added to menu.");
+    }
+
+    private void updateRestaurantMenuHint() {
+        String selected = selectedValue(restaurantSelect);
+        if (selected.isEmpty()) {
+            restaurantMenuHintArea.setText("(No restaurant selected)");
+            return;
+        }
+        String restName = stripLeadingId(selected);
+        List<FoodItem> foods = foodAVLTree.getAllFoods().stream()
+                .filter(f -> f.getRestaurantName().equalsIgnoreCase(restName))
+                .toList();
+        if (foods.isEmpty()) {
+            restaurantMenuHintArea.setText("No menu items registered for " + restName + ".");
+        } else {
+            StringBuilder sb = new StringBuilder();
+            sb.append("Menu for ").append(restName).append(":\n");
+            for (FoodItem f : foods) {
+                sb.append("• ").append(f.getName()).append(" - RM").append(String.format("%.2f", f.getPrice())).append(" (").append(f.getCategory()).append(")\n");
+            }
+            restaurantMenuHintArea.setText(sb.toString());
+        }
+    }
+
+    private void refreshMenuTable() {
+        menuModel.setRowCount(0);
+        for (FoodItem food : foodAVLTree.getAllFoods()) {
+            menuModel.addRow(new Object[]{food.getName(), food.getCategory(), "RM" + String.format("%.2f", food.getPrice()), food.getRestaurantName()});
+        }
     }
 
     private void setStatus(String message) {

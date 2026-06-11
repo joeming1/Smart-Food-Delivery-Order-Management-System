@@ -135,4 +135,17 @@ public class FoodAVLTree {
         if (node == null) return 0;
         return 1 + sizeRec(node.left) + sizeRec(node.right);
     }
+
+    public java.util.List<FoodItem> getAllFoods() {
+        java.util.List<FoodItem> list = new java.util.ArrayList<>();
+        collectInOrder(root, list);
+        return list;
+    }
+
+    private void collectInOrder(AVLNode node, java.util.List<FoodItem> list) {
+        if (node == null) return;
+        collectInOrder(node.left, list);
+        list.add(node.food);
+        collectInOrder(node.right, list);
+    }
 }

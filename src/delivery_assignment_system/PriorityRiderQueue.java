@@ -38,6 +38,10 @@ public class PriorityRiderQueue {
         }
     }
 
+    public boolean remove(Rider rider) {
+        return riderQueue.remove(rider);
+    }
+
     public Rider assignBestRider() {
         if (riderQueue.isEmpty()) return null;
         return riderQueue.poll(); 

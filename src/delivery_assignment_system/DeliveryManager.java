@@ -1,20 +1,22 @@
 package delivery_assignment_system;
 
+import Route_Optimization_System.Graph;
+import Route_Optimization_System.Node;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Scanner;
 
 public class DeliveryManager {
 
-    private final PriorityRiderQueue priorityQueue;
-    private final List<Rider> linearList; 
+    private final DeliveryService deliveryService;
+    private final List<Rider> linearList;
     private final Scanner scanner;
 
     public DeliveryManager(Scanner scanner) {
         this.scanner = scanner;
-
-        this.priorityQueue = new PriorityRiderQueue(PriorityRiderQueue.PriorityMode.SHORTEST_TIME);
+        this.deliveryService = new DeliveryService();
         this.linearList = new ArrayList<>();
+        loadSampleGraph();
         loadSampleData();
     }
 
@@ -25,7 +27,7 @@ public class DeliveryManager {
             choice = readInt();
             switch (choice) {
                 case 1 -> addRider();
-                case 2 -> updateRider();
+                case 2 -> updateRiderLocation();
                 case 3 -> dispatchBestRider();
                 case 4 -> displayRiders();
                 case 5 -> compareAssignmentSpeed();
@@ -40,21 +42,19 @@ public class DeliveryManager {
         String id = scanner.nextLine().trim();
         System.out.print("  Name          : ");
         String name = scanner.nextLine().trim();
-        System.out.print("  Distance (km) : ");
-        double distance = readDouble();
-        System.out.print("  Time (mins)   : ");
-        int time = readInt();
+        System.out.print("  Location ID   : ");
+        String location = scanner.nextLine().trim();
 
-        Rider rider = new Rider(id, name, distance, time);
-        priorityQueue.addRider(rider);
+        Rider rider = new Rider(id, name, 0, 0, location.isEmpty() ? "UNKNOWN" : location);
+        deliveryService.addRider(rider);
         linearList.add(rider);
         System.out.println("  ✓ Rider \"" + name + "\" added to the dispatch queue.");
     }
 
-    private void updateRider() {
+    private void updateRiderLocation() {
         System.out.print("\n  Enter Rider ID to update: ");
         String id = scanner.nextLine().trim();
-        
+
         Rider target = null;
         for (Rider r : linearList) {
             if (r.getRiderId().equalsIgnoreCase(id)) {
@@ -64,32 +64,59 @@ public class DeliveryManager {
         }
 
         if (target != null) {
-            System.out.print("  New Distance (km) : ");
-            double newDist = readDouble();
-            System.out.print("  New Time (mins)   : ");
-            int newTime = readInt();
-            
-            priorityQueue.updateRiderPriority(target, newDist, newTime);
-            System.out.println("  ✓ Priority updated for Rider: " + target.getName());
+            System.out.print("  New Location ID : ");
+            String newLocation = scanner.nextLine().trim();
+            target.setCurrentLocationId(newLocation.isEmpty() ? "UNKNOWN" : newLocation);
+            target.setDistanceKm(0);
+            target.setDeliveryTimeMins(0);
+            System.out.println("  ✓ Location updated for Rider: " + target.getName());
         } else {
             System.out.println("  Rider not found in the active queue.");
         }
     }
 
     private void dispatchBestRider() {
-        System.out.println("\n  [Assigning Best Rider via Min Heap]");
-        Rider best = priorityQueue.assignBestRider();
+        System.out.print("\n  Restaurant Location ID : ");
+        String restaurantId = scanner.nextLine().trim();
+        if (restaurantId.isEmpty()) {
+            System.out.println("  Restaurant location is required.");
+            return;
+        }
+
+        System.out.println("  [Assigning nearest rider via route optimization]");
+        deliveryService.updateRiderPrioritiesForRestaurant(restaurantId);
+        Rider best = deliveryService.assignBestRiderForRestaurant(restaurantId);
         if (best != null) {
-            System.out.println("  ✓ Dispatched: " + best);
+            System.out.printf("  ✓ Dispatched: %s (%.1f min from %s to %s)%n",
+                    best, best.getDeliveryTimeMins(), best.getCurrentLocationId(), restaurantId);
             linearList.remove(best);
         } else {
-            System.out.println("  No riders available in the queue.");
+            System.out.println("  No riders available or no route to restaurant.");
         }
     }
 
     private void displayRiders() {
         System.out.println("\n  === Active Delivery Riders ===");
-        priorityQueue.displayAllRiders();
+        System.out.print("  Show travel time to restaurant (location ID, blank to skip): ");
+        String restaurantId = scanner.nextLine().trim();
+        if (!restaurantId.isEmpty()) {
+            deliveryService.updateRiderPrioritiesForRestaurant(restaurantId);
+        }
+        if (deliveryService.getAvailableRiders().isEmpty()) {
+            System.out.println("  (no riders currently in queue)");
+            return;
+        }
+        System.out.println("  " + "-".repeat(62));
+        System.out.format("  | %-5s | %-12s | %-9s | %-9s | %-12s |%n", "ID", "Name", "Mins", "Location", "State");
+        System.out.println("  " + "-".repeat(62));
+        for (Rider r : deliveryService.getAvailableRiders()) {
+            System.out.println("  | " + r + " | Available |");
+        }
+        for (Rider r : deliveryService.getBusyRiders()) {
+            System.out.printf("  | %-5s | %-12s | %-9s | %-12s | Busy |%n",
+                    r.getRiderId(), r.getName(), "-", r.getCurrentLocationId());
+        }
+        System.out.println("  " + "-".repeat(62));
     }
 
     private void compareAssignmentSpeed() {
@@ -99,40 +126,58 @@ public class DeliveryManager {
             return;
         }
 
-        // 1. Min Heap Speed Test (O(1) to peek the minimum value)
-        long t1 = System.nanoTime();
-        Rider heapBest = priorityQueue.peekBestRider();
-        long t2 = System.nanoTime();
-        System.out.printf("  Min Heap peek() : %5d ns  → O(1)%n", (t2 - t1));
+        String restaurantId = "C_Restaurant";
+        deliveryService.updateRiderPrioritiesForRestaurant(restaurantId);
 
-        // 2. Linear Search Speed Test (O(n) scanning the entire list)
+        long t1 = System.nanoTime();
+        Rider heapBest = deliveryService.peekBestRiderForRestaurant(restaurantId);
+        long t2 = System.nanoTime();
+        System.out.printf("  Route-aware heap peek() : %5d ns  → O(1)%n", (t2 - t1));
+
         t1 = System.nanoTime();
         Rider linearBest = linearList.get(0);
         for (Rider r : linearList) {
-            if (r.getDeliveryTimeMins() < linearBest.getDeliveryTimeMins()) {
+            double travel = deliveryService.travelTimeTo(r.getCurrentLocationId(), restaurantId);
+            double bestTravel = deliveryService.travelTimeTo(linearBest.getCurrentLocationId(), restaurantId);
+            if (travel < bestTravel) {
                 linearBest = r;
             }
         }
         t2 = System.nanoTime();
-        System.out.printf("  Linear search   : %5d ns  → O(n) where n=%d%n", (t2 - t1), linearList.size());
+        System.out.printf("  Linear route search     : %5d ns  → O(n) where n=%d%n", (t2 - t1), linearList.size());
 
-        System.out.println("\n  Min Heap found  : " + (heapBest != null ? heapBest.getName() : "none"));
-        System.out.println("  Linear found    : " + (linearBest != null ? linearBest.getName() : "none"));
-        System.out.println("\n  As 'n' grows, the Min Heap stays instantly fast at O(1),");
-        System.out.println("  while Linear Search degrades linearly.");
+        System.out.println("\n  Heap found    : " + (heapBest != null ? heapBest.getName() : "none"));
+        System.out.println("  Linear found  : " + (linearBest != null ? linearBest.getName() : "none"));
+        System.out.println("\n  Distances are computed dynamically from each rider to the restaurant.");
+    }
+
+    private void loadSampleGraph() {
+        Graph graph = new Graph();
+        String[] locations = {
+            "A_Restaurant", "B_Restaurant", "C_Restaurant",
+            "D_Hub", "E_Customer", "F_Customer", "G_Customer"
+        };
+        for (String location : locations) {
+            graph.addNode(new Node(location));
+        }
+        addRoute(graph, "A_Restaurant", "D_Hub", 4);
+        addRoute(graph, "B_Restaurant", "D_Hub", 3);
+        addRoute(graph, "C_Restaurant", "D_Hub", 5);
+        addRoute(graph, "D_Hub", "E_Customer", 2);
+        addRoute(graph, "D_Hub", "F_Customer", 4);
+        addRoute(graph, "D_Hub", "G_Customer", 6);
+        addRoute(graph, "A_Restaurant", "E_Customer", 7);
+        addRoute(graph, "B_Restaurant", "F_Customer", 6);
+        deliveryService.setRouteGraph(graph);
+    }
+
+    private void addRoute(Graph graph, String from, String to, double weight) {
+        graph.addEdge(new Node(from), new Node(to), weight);
+        graph.addEdge(new Node(to), new Node(from), weight);
     }
 
     private void loadSampleData() {
-        Rider[] sampleRiders = {
-            new Rider("R01", "Ali", 5.2, 15),
-            new Rider("R02", "Bala", 1.5, 5),
-            new Rider("R03", "Chong", 3.0, 10),
-            new Rider("R04", "David", 8.0, 25)
-        };
-        for (Rider r : sampleRiders) {
-            priorityQueue.addRider(r);
-            linearList.add(r);
-        }
+        linearList.addAll(deliveryService.getAllRiders());
     }
 
     private void printMenu() {
@@ -140,8 +185,8 @@ public class DeliveryManager {
         System.out.println("║  Member 3 — Delivery Assignment System   ║");
         System.out.println("╠══════════════════════════════════════════╣");
         System.out.println("║  1. Add new rider to queue               ║");
-        System.out.println("║  2. Update rider location/priority       ║");
-        System.out.println("║  3. Dispatch best available rider        ║");
+        System.out.println("║  2. Update rider location                ║");
+        System.out.println("║  3. Dispatch nearest rider to restaurant ║");
         System.out.println("║  4. Display all active riders            ║");
         System.out.println("║  5. O(log n) vs O(n) Speed Demo          ║");
         System.out.println("║  0. Back                                 ║");
@@ -154,15 +199,6 @@ public class DeliveryManager {
             return Integer.parseInt(scanner.nextLine().trim());
         } catch (NumberFormatException e) {
             return -1;
-        }
-    }
-
-    private double readDouble() {
-        try {
-            return Double.parseDouble(scanner.nextLine().trim());
-        } catch (NumberFormatException e) {
-            System.out.println("  Invalid number, defaulting to 0.0");
-            return 0.0;
         }
     }
 
