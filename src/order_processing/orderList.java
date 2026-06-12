@@ -13,8 +13,12 @@ public class orderList {
         orderQueue.offer(order);
     }
 
-    public void undoOrder() {
-        ((LinkedList<order>) orderQueue).pollLast();
+    public order undoOrder() {
+        return ((LinkedList<order>) orderQueue).pollLast();
+    }
+
+    public java.util.List<order> getOrdersList() {
+        return new java.util.ArrayList<>(orderQueue);
     }
 
     public void displayOrders() {

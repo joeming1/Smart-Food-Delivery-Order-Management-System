@@ -48,6 +48,7 @@ import javax.swing.Timer;
 import javax.swing.table.DefaultTableModel;
 import javax.swing.table.TableColumn;
 import order_processing.order;
+import order_processing.orderSystem;
 import user_management.Customer;
 import user_management.Restaurant;
 import user_management.RestaurantManager;
@@ -63,7 +64,12 @@ public class OnePageDashboard extends JFrame {
     private final DeliveryService deliveryService = new DeliveryService();
     private final Graph routeGraph = new Graph();
     private final Map<String, String> locationTypes = new LinkedHashMap<>();
-    private final List<order> orders = new ArrayList<>();
+    
+    private final orderSystem orderSys = new orderSystem();
+    private List<order> getOrdersList() {
+        return orderSys.getOrderList().getOrdersList();
+    }
+    
     private final List<DeliveryTrack> activeTracks = new ArrayList<>();
 
     // Search & Data Retrieval System
@@ -107,7 +113,8 @@ public class OnePageDashboard extends JFrame {
     private final JTextField riderNameField = new JTextField(10);
     private final JComboBox<String> riderLocationSelect = new JComboBox<>();
 
-    private final JTextField orderContentField = new JTextField(14);
+    private final JComboBox<String> foodItemSelect = new JComboBox<>();
+    private final javax.swing.JTextArea cartArea = new javax.swing.JTextArea(3, 20);
     private final JTextField routeWeightField = new JTextField(10);
     private final JTextField locationIdField = new JTextField(10);
     private final JComboBox<String> locationTypeSelect = new JComboBox<>(new String[]{"Customer", "Restaurant", "Hub", "Other"});
@@ -303,16 +310,36 @@ public class OnePageDashboard extends JFrame {
         JScrollPane menuScroll = new JScrollPane(restaurantMenuHintArea);
         menuScroll.setPreferredSize(new Dimension(300, 100));
         menuScroll.setBorder(BorderFactory.createTitledBorder("Restaurant Menu"));
+
+        cartArea.setEditable(false);
+        cartArea.setLineWrap(true);
+        cartArea.setWrapStyleWord(true);
+        cartArea.setBackground(new Color(245, 246, 249));
+        cartArea.setFont(new Font("SansSerif", Font.PLAIN, 12));
+        cartArea.setText("Cart: (empty)");
+        JScrollPane cartScroll = new JScrollPane(cartArea);
+        cartScroll.setPreferredSize(new Dimension(300, 60));
+        cartScroll.setBorder(BorderFactory.createTitledBorder("Current Cart"));
  
         return section("Order Management",
             section("Place New Order",
                 formRow("Customer", userSelect),
                 formRow("Restaurant", restaurantSelect),
-                formRow("Content", orderContentField),
+                formRow("Select Food Item", foodItemSelect),
+                Box.createVerticalStrut(6),
+                buttonRow(
+                    button("Add Food Item", e -> addFoodItemToCart()),
+                    button("Undo Last Food", e -> undoLastFoodItem())
+                ),
+                Box.createVerticalStrut(6),
+                cartScroll,
                 Box.createVerticalStrut(6),
                 menuScroll,
                 Box.createVerticalStrut(12),
-                buttonRow(button("Add Order", e -> addOrderFromFields()))
+                buttonRow(
+                    button("Place Order", e -> placeOrderFromCart()),
+                    button("Undo Last Order", e -> undoLastOrder())
+                )
             ),
             Box.createVerticalStrut(10),
             section("Confirm Pending Order",
@@ -409,11 +436,13 @@ public class OnePageDashboard extends JFrame {
         setComboPrototype(routeFromSelect, "A_Restaurant");
         setComboPrototype(routeToSelect, "G_Customer");
         setComboPrototype(foodRestaurantSelect, "R999 | Restaurant Name");
+        setComboPrototype(foodItemSelect, "Char Kuey Teow");
         configureTruncatedCombo(dispatchOrderSelect);
         configureTruncatedCombo(pendingOrderSelect);
         configureTruncatedCombo(dispatchSourceSelect);
         configureTruncatedCombo(dispatchTargetSelect);
         configureTruncatedCombo(foodRestaurantSelect);
+        configureTruncatedCombo(foodItemSelect);
         dispatchMinutesField.setToolTipText("Leave blank to auto-calculate from route optimization.");
     }
 
@@ -571,21 +600,21 @@ public class OnePageDashboard extends JFrame {
         first.setSourceLocation("A_Restaurant");
         first.setTargetLocation("E_Customer");
         first.setStatus("CONFIRMED");
-        orders.add(first);
+        orderSys.getOrderList().addOrder(first);
         dataStorage.saveOrder(first);
 
         order second = new order("F_Customer", "B_Restaurant", "Char Kuey Teow x1");
         second.setSourceLocation("B_Restaurant");
         second.setTargetLocation("F_Customer");
         second.setStatus("PENDING");
-        orders.add(second);
+        orderSys.getOrderList().addOrder(second);
         dataStorage.saveOrder(second);
 
         order third = new order("G_Customer", "C_Restaurant", "Roti Canai x3, Teh Tarik x2");
         third.setSourceLocation("C_Restaurant");
         third.setTargetLocation("G_Customer");
         third.setStatus("CONFIRMED");
-        orders.add(third);
+        orderSys.getOrderList().addOrder(third);
         dataStorage.saveOrder(third);
     }
 
@@ -650,28 +679,83 @@ public class OnePageDashboard extends JFrame {
         setStatus("Rider added.");
     }
 
-    private void addOrderFromFields() {
+    private void addFoodItemToCart() {
         String customer = selectedValue(userSelect);
         String restaurant = selectedValue(restaurantSelect);
-        String content = orderContentField.getText().trim();
-        if (customer.isEmpty() || restaurant.isEmpty() || content.isEmpty()) {
-            setStatus("Please select Customer, Restaurant, and enter Content.");
+        String foodName = selectedValue(foodItemSelect);
+        if (customer.isEmpty() || restaurant.isEmpty() || foodName.isEmpty()) {
+            setStatus("Please select Customer, Restaurant, and Food Item.");
             return;
         }
         String custName = stripLeadingId(customer);
         String restName = stripLeadingId(restaurant);
-        order newOrder = new order(custName, restName, content);
+        orderSys.startOrder(custName, restName);
         
-        String restLoc = getRestaurantLocation(restName);
-        String custLoc = getCustomerLocation(custName);
-        newOrder.setSourceLocation(restLoc != null ? restLoc : "UNKNOWN");
-        newOrder.setTargetLocation(custLoc != null ? custLoc : "UNKNOWN");
+        FoodItem item = foodAVLTree.search(foodName);
+        if (item == null) {
+            setStatus("Food item not found: " + foodName);
+            return;
+        }
+        orderSys.addItem(item);
+        updateCartDisplay();
+        setStatus("Added \"" + item.getName() + "\" to cart.");
+    }
+
+    private void undoLastFoodItem() {
+        FoodItem item = orderSys.undoLastItem();
+        if (item != null) {
+            setStatus("Undone last item: \"" + item.getName() + "\".");
+        } else {
+            setStatus("Cart is already empty.");
+        }
+        updateCartDisplay();
+    }
+
+    private void placeOrderFromCart() {
+        if (orderSys.isCartEmpty()) {
+            setStatus("Cannot place order: Cart is empty.");
+            return;
+        }
+        String customer = selectedValue(userSelect);
+        String restaurant = selectedValue(restaurantSelect);
+        String custName = stripLeadingId(customer);
+        String restName = stripLeadingId(restaurant);
         
-        orders.add(newOrder);
-        dataStorage.saveOrder(newOrder);
-        orderContentField.setText("");
-        refreshAllViews();
-        setStatus("Order added.");
+        orderSys.startOrder(custName, restName);
+        order newOrder = orderSys.confirmOrder();
+        if (newOrder != null) {
+            String restLoc = getRestaurantLocation(restName);
+            String custLoc = getCustomerLocation(custName);
+            newOrder.setSourceLocation(restLoc != null ? restLoc : "UNKNOWN");
+            newOrder.setTargetLocation(custLoc != null ? custLoc : "UNKNOWN");
+            dataStorage.saveOrder(newOrder);
+            updateCartDisplay();
+            refreshAllViews();
+            setStatus("Order placed: Order #" + newOrder.getOrderID() + ". Status: PENDING.");
+        } else {
+            setStatus("Failed to build order.");
+        }
+    }
+
+    private void undoLastOrder() {
+        order undone = orderSys.undoLastOrder();
+        if (undone != null) {
+            dataStorage.deleteOrder("ORD-" + undone.getOrderID());
+            refreshAllViews();
+            setStatus("Undone last placed Order #" + undone.getOrderID() + ".");
+        } else {
+            setStatus("No orders to undo.");
+        }
+    }
+
+    private void updateCartDisplay() {
+        if (orderSys.isCartEmpty()) {
+            cartArea.setText("Cart: (empty)");
+        } else {
+            String content = orderSys.getCartContentString();
+            double total = orderSys.getCartTotalPrice();
+            cartArea.setText("Content: " + content + "\nTotal: RM" + String.format("%.2f", total));
+        }
     }
 
     private void confirmSelectedOrder() {
@@ -795,7 +879,7 @@ public class OnePageDashboard extends JFrame {
         String finalLoc = track != null ? track.target : "UNKNOWN";
         if (deliveryService.completeDelivery(riderId, finalLoc)) {
             activeTracks.removeIf(t -> t.rider.getRiderId().equalsIgnoreCase(riderId));
-            orders.stream()
+            getOrdersList().stream()
                     .filter(o -> riderId.equalsIgnoreCase(o.getAssignedRiderId()))
                     .forEach(o -> o.setStatus("DELIVERED"));
             mapPanel.setHighlightedPath(Collections.emptyList());
@@ -863,7 +947,7 @@ public class OnePageDashboard extends JFrame {
 
     private void refreshOrders() {
         ordersModel.setRowCount(0);
-        for (order o : orders) {
+        for (order o : getOrdersList()) {
             String route = o.getSourceLocation() == null ? "-" : o.getSourceLocation() + " -> " + o.getTargetLocation();
             ordersModel.addRow(new Object[]{o.getOrderID(), o.getCustomerName(), o.getRestaurantName(), o.getOrderContent(), o.getStatus(), o.getAssignedRiderId() == null ? "-" : o.getAssignedRiderId(), route});
         }
@@ -889,15 +973,15 @@ public class OnePageDashboard extends JFrame {
         fillCombo(userSelect, userManager.getCustomers().stream().map(c -> c.getId() + " | " + c.getName()).toList());
         fillCombo(restaurantSelect, restaurantManager.getRestaurants().stream().map(r -> r.getId() + " | " + r.getName()).toList());
         fillCombo(riderSelect, deliveryService.getBusyRiders().stream().map(r -> r.getRiderId() + " | " + r.getName()).toList());
-        fillCombo(orderSelect, orders.stream().map(o -> o.getOrderID() + " | " + o.getCustomerName() + " | " + o.getRestaurantName()).toList());
+        fillCombo(orderSelect, getOrdersList().stream().map(o -> o.getOrderID() + " | " + o.getCustomerName() + " | " + o.getRestaurantName()).toList());
         
-        List<String> pendingOnly = orders.stream()
+        List<String> pendingOnly = getOrdersList().stream()
                 .filter(o -> "PENDING".equals(o.getStatus()))
                 .map(this::formatOrderForCombo)
                 .toList();
         fillCombo(pendingOrderSelect, pendingOnly);
 
-        List<String> confirmedOnly = orders.stream()
+        List<String> confirmedOnly = getOrdersList().stream()
                 .filter(o -> "CONFIRMED".equals(o.getStatus()))
                 .map(this::formatOrderForCombo)
                 .toList();
@@ -967,7 +1051,7 @@ public class OnePageDashboard extends JFrame {
     }
 
     private order findOrder(int id) {
-        for (order o : orders) {
+        for (order o : getOrdersList()) {
             if (o.getOrderID() == id) return o;
         }
         return null;
@@ -1026,7 +1110,7 @@ public class OnePageDashboard extends JFrame {
             if (track.isFinished(now)) {
                 finished.add(track);
                 deliveryService.completeDelivery(track.rider.getRiderId(), track.target);
-                orders.stream()
+                getOrdersList().stream()
                         .filter(o -> track.rider.getRiderId().equalsIgnoreCase(o.getAssignedRiderId()))
                         .forEach(o -> o.setStatus("DELIVERED"));
             }
@@ -1483,7 +1567,7 @@ public class OnePageDashboard extends JFrame {
             try {
                 targetId = Integer.parseInt(orderKey.replace("ORD-", ""));
             } catch (Exception e) {}
-            for (order ord : orders) {
+            for (order ord : getOrdersList()) {
                 if (ord.getOrderID() == targetId) {
                     linearResult = ord;
                     break;
@@ -1588,11 +1672,22 @@ public class OnePageDashboard extends JFrame {
 
     private void updateRestaurantMenuHint() {
         String selected = selectedValue(restaurantSelect);
+        foodItemSelect.removeAllItems();
         if (selected.isEmpty()) {
             restaurantMenuHintArea.setText("(No restaurant selected)");
+            orderSys.clearCart();
+            updateCartDisplay();
             return;
         }
         String restName = stripLeadingId(selected);
+        
+        // Clear cart if the restaurant changed
+        if (orderSys.getCurrentBuilder().getRestaurantName() != null && 
+            !orderSys.getCurrentBuilder().getRestaurantName().equalsIgnoreCase(restName)) {
+            orderSys.clearCart();
+            updateCartDisplay();
+        }
+
         List<FoodItem> foods = foodAVLTree.getAllFoods().stream()
                 .filter(f -> f.getRestaurantName().equalsIgnoreCase(restName))
                 .toList();
@@ -1603,6 +1698,7 @@ public class OnePageDashboard extends JFrame {
             sb.append("Menu for ").append(restName).append(":\n");
             for (FoodItem f : foods) {
                 sb.append("• ").append(f.getName()).append(" - RM").append(String.format("%.2f", f.getPrice())).append(" (").append(f.getCategory()).append(")\n");
+                foodItemSelect.addItem(f.getName());
             }
             restaurantMenuHintArea.setText(sb.toString());
         }
